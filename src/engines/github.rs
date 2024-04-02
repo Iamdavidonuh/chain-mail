@@ -6,10 +6,18 @@ use scraper::{Html, Selector};
 use super::Buildrequest;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct GithubCommitInfo {
+    title: String,
+    verbose_title: String,
+    commit_url: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct GithubResults {
     pub(crate) name: Option<String>,
 
     pub(crate) profile_url: Option<String>,
+    pub(crate) commit_history: Vec<GithubCommitInfo>,
 }
 
 impl GithubResults {
@@ -17,6 +25,7 @@ impl GithubResults {
         Self {
             name: None,
             profile_url: None,
+            commit_history: Vec::new(),
         }
     }
 }
@@ -39,14 +48,12 @@ impl Github {
 
         let search_url = format!("{}/search", &self.base_url);
         let url = self.parse_url(&search_url, Some(&query_params));
+
         let html_text = self.run_browser(url).await?;
 
         let document = Html::parse_document(&html_text);
-
         let user_selector = Selector::parse(r#"div.Box-sc-g0xbh4-0.hDWxXB"#).unwrap();
-
         let mut div_box = document.select(&user_selector);
-
         let hrefs_container = Selector::parse("h3").unwrap();
 
         if div_box.clone().next().is_none() {
@@ -62,18 +69,67 @@ impl Github {
         let name = user_box
             .select(&Selector::parse("a").unwrap())
             .next()
-            .and_then(|href| Some(href.text().collect::<String>().trim().to_owned()))
+            .map(|href| href.text().collect::<String>().trim().to_owned())
             .unwrap();
 
         let href = user_box
             .select(&Selector::parse("a").unwrap())
             .next()
-            .and_then(|href| href.value().attr("href"))
+            .map(|href| href.value().attr("href").unwrap())
             .map(str::to_owned)
             .unwrap();
         let href = format!("{}{}", &self.base_url, href);
         search_result.name = Some(name);
         search_result.profile_url = Some(href);
+
+        Ok(())
+    }
+
+    async fn parse_commits(&self, search_result: &mut GithubResults) -> Result<(), anyhow::Error> {
+        let query_params = [("q", &self.search_query as &str), ("type", "commits")];
+
+        let search_url = format!("{}/search", &self.base_url);
+        let url = self.parse_url(&search_url, Some(&query_params));
+
+        let html_text = self.run_browser(url).await?;
+        let document = Html::parse_document(&html_text);
+
+        let commit_container = Selector::parse(r#"h3.Box-sc-g0xbh4-0.eYhAUV"#).unwrap();
+        let commit_boxes = document.select(&commit_container);
+        let commit_span_ele = Selector::parse(r#".search-match"#).unwrap();
+
+        let result = commit_boxes
+            .filter_map(|ele| {
+                let entry = ele.select(&commit_span_ele).next().unwrap();
+                let href = entry
+                    .select(&Selector::parse("a").unwrap())
+                    .next()
+                    .map(|href| href.value().attr("href").unwrap())
+                    .map(str::to_owned)
+                    .unwrap();
+
+                let href = format!("{}{}", &self.base_url, href);
+
+                let name = entry
+                    .select(&Selector::parse("a").unwrap())
+                    .next()
+                    .and_then(|href| Some(href.text().collect::<String>().trim().to_owned()))
+                    .unwrap();
+                let full_commit = entry
+                    .select(&Selector::parse("a").unwrap())
+                    .next()
+                    .map(|href| href.value().attr("title").unwrap())
+                    .map(str::to_owned)
+                    .unwrap();
+
+                Some(GithubCommitInfo {
+                    title: name,
+                    commit_url: href,
+                    verbose_title: full_commit,
+                })
+            })
+            .collect();
+        search_result.commit_history = result;
 
         Ok(())
     }
@@ -84,13 +140,14 @@ impl Buildrequest for Github {
     async fn search(&self) -> Result<Self::Item, Error> {
         let mut github_results = GithubResults::new();
         // parser user
-        //
-
         if let Err(err) = self.parse_user(&mut github_results).await {
-            anyhow::bail!("error fetching information: {}", err);
+            anyhow::bail!("error fetching git profile info: {}", err);
         };
         // TODO: parse commits
-        //let url_2 = "https://github.com/search?q=diretnandomnan%40gmail.com&type=commits";
+        if let Err(err) = self.parse_commits(&mut github_results).await {
+            anyhow::bail!("error fetching recent commits: {}", err);
+        };
+
         // parse issues
         // https://github.com/search?q=diretnandomnan%40gmail.com&type=issues
         Ok(github_results)
