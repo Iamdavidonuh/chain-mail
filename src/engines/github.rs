@@ -1,34 +1,10 @@
 use anyhow::Error;
 use async_trait::async_trait;
-
 use scraper::{Html, Selector};
 
-use super::Buildrequest;
+use crate::types::{GithubCommitInfo, GithubResults};
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub(crate) struct GithubCommitInfo {
-    title: String,
-    verbose_title: String,
-    commit_url: String,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub(crate) struct GithubResults {
-    pub(crate) name: Option<String>,
-
-    pub(crate) profile_url: Option<String>,
-    pub(crate) commit_history: Vec<GithubCommitInfo>,
-}
-
-impl GithubResults {
-    fn new() -> Self {
-        Self {
-            name: None,
-            profile_url: None,
-            commit_history: Vec::new(),
-        }
-    }
-}
+use crate::Buildrequest;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Github {
@@ -98,6 +74,10 @@ impl Github {
         let commit_boxes = document.select(&commit_container);
         let commit_span_ele = Selector::parse(r#".search-match"#).unwrap();
 
+        if commit_boxes.clone().next().is_none() {
+            return Ok(());
+        }
+
         let result = commit_boxes
             .filter_map(|ele| {
                 let entry = ele.select(&commit_span_ele).next().unwrap();
@@ -143,12 +123,12 @@ impl Buildrequest for Github {
         if let Err(err) = self.parse_user(&mut github_results).await {
             anyhow::bail!("error fetching git profile info: {}", err);
         };
-        // TODO: parse commits
+        // parse commits
         if let Err(err) = self.parse_commits(&mut github_results).await {
             anyhow::bail!("error fetching recent commits: {}", err);
         };
 
-        // parse issues
+        // TODO: parse issues
         // https://github.com/search?q=diretnandomnan%40gmail.com&type=issues
         Ok(github_results)
     }

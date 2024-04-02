@@ -3,10 +3,9 @@
 
 use crate::engines::github::Github;
 use crate::engines::Buildrequest;
+use crate::types::ProfileData;
 mod engines;
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct ProfileData;
+mod types;
 
 pub struct ProfileRequest {
     username: String,
