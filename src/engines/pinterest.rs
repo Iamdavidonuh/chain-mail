@@ -1,9 +1,7 @@
 use async_trait::async_trait;
 
 use super::Buildrequest;
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub(crate) struct PinterestResults;
+use crate::types::{PinterestResults, ProfileData};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Pinterest {
@@ -13,8 +11,7 @@ pub(crate) struct Pinterest {
 
 #[async_trait]
 impl Buildrequest for Pinterest {
-    type Item = PinterestResults;
-    async fn search(&self) -> Result<Self::Item, anyhow::Error> {
+    async fn search(&self, result: &mut ProfileData) -> Result<(), anyhow::Error> {
         todo!()
     }
 }

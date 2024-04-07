@@ -1,8 +1,8 @@
-use anyhow::Error;
+use anyhow::{Error, Ok};
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 
-use crate::types::{GithubCommitInfo, GithubResults};
+use crate::types::{GithubCommitInfo, GithubIssues, GithubResults, ProfileData};
 
 use crate::Buildrequest;
 
@@ -113,11 +113,60 @@ impl Github {
 
         Ok(())
     }
+
+    async fn parse_issues(&self, search_result: &mut GithubResults) -> Result<(), anyhow::Error> {
+        let query_params = [("q", &self.search_query as &str), ("type", "issues")];
+
+        let search_url = format!("{}/search", &self.base_url);
+        let url = self.parse_url(&search_url, Some(&query_params));
+
+        let html_text = self.run_browser(url).await?;
+
+        let document = Html::parse_document(&html_text);
+
+        let issues_selector = Selector::parse(r#"div.Box-sc-g0xbh4-0.hDWxXB"#).unwrap();
+        let mut div_box = document.select(&issues_selector);
+        let hrefs_container = Selector::parse(".search-title").unwrap();
+
+        let issue_boxes = div_box.next().unwrap().select(&hrefs_container);
+
+        if issue_boxes.clone().next().is_none() {
+            return Ok(());
+        }
+
+        let issues: Vec<_> = issue_boxes
+            .filter_map(|issue_box| {
+                let issue_name = issue_box
+                    .select(&Selector::parse("a").unwrap())
+                    .next()
+                    .map(|href| href.text().collect::<String>().trim().to_owned())
+                    .unwrap();
+
+                let issue_href = issue_box
+                    .select(&Selector::parse("a").unwrap())
+                    .next()
+                    .map(|href| href.value().attr("href").unwrap())
+                    .map(str::to_owned)
+                    .unwrap();
+                let issue_href = format!("{}{}", &self.base_url, issue_href);
+
+                println!("{}, {}", issue_href, issue_name);
+
+                Some(GithubIssues {
+                    title: issue_name,
+                    issue_url: issue_href,
+                })
+            })
+            .collect();
+
+        search_result.issues = issues;
+
+        Ok(())
+    }
 }
 #[async_trait]
 impl Buildrequest for Github {
-    type Item = GithubResults;
-    async fn search(&self) -> Result<Self::Item, Error> {
+    async fn search(&self, result: &mut ProfileData) -> Result<(), Error> {
         let mut github_results = GithubResults::new();
         // parser user
         if let Err(err) = self.parse_user(&mut github_results).await {
@@ -128,8 +177,11 @@ impl Buildrequest for Github {
             anyhow::bail!("error fetching recent commits: {}", err);
         };
 
-        // TODO: parse issues
-        // https://github.com/search?q=diretnandomnan%40gmail.com&type=issues
-        Ok(github_results)
+        // parse issues
+        if let Err(err) = self.parse_issues(&mut github_results).await {
+            anyhow::bail!("error fetching recent issues: {}", err);
+        };
+        result.github = Some(github_results);
+        Ok(())
     }
 }

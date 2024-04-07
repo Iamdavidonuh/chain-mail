@@ -3,13 +3,14 @@ use headless_chrome::Browser;
 use std::process;
 use std::str::FromStr;
 
+use crate::types::ProfileData;
+
 pub mod github;
 pub mod pinterest;
 
 #[async_trait]
 pub(crate) trait Buildrequest {
-    type Item;
-    async fn search(&self) -> Result<Self::Item, anyhow::Error>;
+    async fn search(&self, result: &mut ProfileData) -> Result<(), anyhow::Error>;
 
     fn parse_url(&self, url: &str, query_params: Option<&[(&str, &str)]>) -> reqwest::Url {
         if let Some(params) = query_params {

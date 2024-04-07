@@ -25,19 +25,24 @@ impl ProfileRequest {
         }
     }
 
-    pub async fn build(&self) {
+    pub async fn build(&self) -> Result<String, anyhow::Error> {
+        let mut response = ProfileData::new();
+
         let github = Github::new(&self.email);
         // build all data and error handle
-        let mut response = self.run_request(&github).await.unwrap();
+        self.run_request(&github, &mut response).await.unwrap();
 
         println!("running github engine rn  {:?}", &github);
+        let json_response = serde_json::to_string(&response)?;
+        Ok(json_response)
     }
 
-    async fn run_request<T: Buildrequest>(&self, engine: &T) -> Result<(), anyhow::Error>
-    where
-        <T as Buildrequest>::Item: std::fmt::Debug,
-    {
-        let response = engine.search().await?;
+    async fn run_request(
+        &self,
+        engine: &impl Buildrequest,
+        response: &mut ProfileData,
+    ) -> Result<(), anyhow::Error> {
+        let response = engine.search(response).await?;
 
         println!("{:?}", response);
 
